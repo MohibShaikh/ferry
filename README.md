@@ -96,6 +96,31 @@ to validate, not a quote.
 quality deltas, eyeball diffs for unscored cases, the full cost table, and the
 judge's reasoning notes. That markdown is the thing you sell.
 
+## Robustness
+
+A migration report is worthless if one flaky API call throws it away. Ferry
+isolates failures per case:
+
+- **A failed model call never crashes the run.** It's recorded as a hole and
+  listed under a "Run health" section; the report still generates from the cases
+  that succeeded. Failed calls are excluded from cost and quality stats (they show
+  `n/a`, not a misleading `$0` or `0.0`).
+- **Truncation is surfaced.** If a model hits the `max_tokens` cap, that case is
+  flagged — its output was cut off, so its quality score and token/cost numbers
+  understate reality.
+- **Quality shows its denominator.** The summary says "averaged over N/M cases",
+  so a run where half the judge calls failed can't masquerade as a confident score.
+
+## Tests
+
+```bash
+npm test        # asserts on the money + judge-parse paths (src/lib.test.ts)
+npm run typecheck
+```
+
+The pure, report-corrupting logic (`parseJudge`, `reqCost`) lives in `src/lib.ts`
+so it's covered without hitting the API.
+
 ## Security
 
 The report is attacker-influenceable: an eval `prompt` steers what the compared

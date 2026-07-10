@@ -10,14 +10,12 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import Anthropic from "@anthropic-ai/sdk";
+import { parseJudge, reqCost, type Price, type Run, type Judged } from "./lib.ts";
 
 const JUDGE_MODEL = "claude-opus-4-8"; // LLM-as-judge, per spec
 const MAX_TOKENS = 1024;
 
 type EvalCase = { id: string; prompt: string; expected?: string };
-type Price = { input: number; output: number };
-type Run = { output: string; inputTokens: number; outputTokens: number };
-type Judged = { score: number; reason: string };
 
 // ── args ──────────────────────────────────────────────────────────────────
 const { values } = parseArgs({
@@ -67,36 +65,28 @@ if (!Array.isArray(cases) || cases.some((c) => !c.id || !c.prompt)) {
 
 const client = new Anthropic();
 
-// Call a model once; capture output text + token usage.
+// Call a model once; capture output text + token usage. Never throws — a failed
+// call returns a Run with `error` set so one bad case can't sink the whole run.
 async function runModel(model: string, prompt: string): Promise<Run> {
-  const msg = await client.messages.create({
-    model,
-    max_tokens: MAX_TOKENS,
-    messages: [{ role: "user", content: prompt }],
-  });
-  const output = msg.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("")
-    .trim();
-  return {
-    output,
-    inputTokens: msg.usage.input_tokens,
-    outputTokens: msg.usage.output_tokens,
-  };
-}
-
-// Strip ```fences``` and pull the first JSON object out of judge output.
-function parseJudge(raw: string): Judged {
   try {
-    const cleaned = raw.replace(/```(?:json)?/gi, "").trim();
-    const match = cleaned.match(/\{[\s\S]*\}/);
-    const obj = JSON.parse(match ? match[0] : cleaned);
-    const score = Math.max(0, Math.min(1, Number(obj.score)));
-    if (!Number.isFinite(score)) throw new Error("no numeric score");
-    return { score, reason: String(obj.reason ?? "") };
+    const msg = await client.messages.create({
+      model,
+      max_tokens: MAX_TOKENS,
+      messages: [{ role: "user", content: prompt }],
+    });
+    const output = msg.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("")
+      .trim();
+    return {
+      output,
+      inputTokens: msg.usage.input_tokens,
+      outputTokens: msg.usage.output_tokens,
+      truncated: msg.stop_reason === "max_tokens",
+    };
   } catch (e) {
-    return { score: NaN, reason: `judge parse failed: ${(e as Error).message}` };
+    return { output: "", inputTokens: 0, outputTokens: 0, truncated: false, error: (e as Error).message };
   }
 }
 
@@ -154,7 +144,9 @@ for (const c of cases) {
     runModel(toModel, c.prompt),
   ]);
   const r: Result = { c, from, to };
-  if (c.expected !== undefined) {
+  // Only judge when there's an expected answer AND both calls actually returned
+  // output — judging an errored (empty) run is meaningless.
+  if (c.expected !== undefined && !from.error && !to.error) {
     [r.fromScore, r.toScore] = await Promise.all([
       judge(c.prompt, c.expected, from.output),
       judge(c.prompt, c.expected, to.output),
@@ -164,20 +156,24 @@ for (const c of cases) {
 }
 
 // ── cost math ────────────────────────────────────────────────────────────────
-// cost of one request = (inputTokens/1e6)*price.input + (outputTokens/1e6)*price.output
-function reqCost(run: Run, p: Price): number {
-  return (run.inputTokens / 1e6) * p.input + (run.outputTokens / 1e6) * p.output;
-}
 const avg = (ns: number[]) => ns.reduce((a, b) => a + b, 0) / ns.length;
 // Show the spread we're extrapolating from, so the reader can judge whether the
 // eval set resembles their production traffic before trusting the projection.
-const spread = (ns: number[]) => `${Math.min(...ns)} / ${avg(ns).toFixed(0)} / ${Math.max(...ns)}`;
+// Guards the empty case (every run errored) so we print n/a, not Infinity/NaN.
+const spread = (ns: number[]) =>
+  ns.length ? `${Math.min(...ns)} / ${avg(ns).toFixed(0)} / ${Math.max(...ns)}` : "n/a";
 
-const fromAvgCost = avg(results.map((r) => reqCost(r.from, prices[fromModel])));
-const toAvgCost = avg(results.map((r) => reqCost(r.to, prices[toModel])));
-// monthly cost = average per-request cost across the eval set * traffic
+// Errored runs are holes (0 tokens), not $0 requests — exclude them from cost
+// stats so a failed call can't silently deflate the projected bill.
+const fromRuns = results.map((r) => r.from).filter((r) => !r.error);
+const toRuns = results.map((r) => r.to).filter((r) => !r.error);
+const fromAvgCost = fromRuns.length ? avg(fromRuns.map((r) => reqCost(r, prices[fromModel]))) : NaN;
+const toAvgCost = toRuns.length ? avg(toRuns.map((r) => reqCost(r, prices[toModel]))) : NaN;
+// monthly cost = average successful-request cost across the eval set * traffic
 const fromMonthly = fromAvgCost * traffic;
 const toMonthly = toAvgCost * traffic;
+const failures = results.filter((r) => r.from.error || r.to.error);
+const truncations = results.filter((r) => r.from.truncated || r.to.truncated);
 
 // ── quality aggregate ────────────────────────────────────────────────────────
 const scored = results.filter((r) => r.fromScore && r.toScore);
@@ -188,9 +184,9 @@ const toAvgScore = validTo.length ? avg(validTo) : NaN;
 
 // ── report ───────────────────────────────────────────────────────────────────
 const n = (x: number, d = 3) => (Number.isFinite(x) ? x.toFixed(d) : "n/a");
-const money = (x: number) => `$${x.toFixed(2)}`;
+const money = (x: number) => (Number.isFinite(x) ? `$${x.toFixed(2)}` : "n/a");
 // per-request costs are sub-cent; show enough precision to be meaningful
-const microMoney = (x: number) => `$${x.toFixed(6)}`;
+const microMoney = (x: number) => (Number.isFinite(x) ? `$${x.toFixed(6)}` : "n/a");
 const delta = (x: number) => (Number.isFinite(x) ? (x >= 0 ? `+${n(x)}` : n(x)) : "n/a");
 // Neutralize markdown/table-breaking chars in attacker-influenced strings
 // (case ids, judge reasons) before they land in tables and list items.
@@ -210,7 +206,25 @@ let md = `# Ferry migration report
 | Avg cost / request | ${microMoney(fromAvgCost)} | ${microMoney(toAvgCost)} | ${microMoney(toAvgCost - fromAvgCost)} |
 | Monthly cost @ ${traffic.toLocaleString()} req | ${money(fromMonthly)} | ${money(toMonthly)} | ${money(toMonthly - fromMonthly)} |
 
+Quality averaged over **${validFrom.length}/${cases.length}** cases that were scored (need \`expected\` + both calls succeeding). Cost averaged over successful calls only.
 `;
+
+if (failures.length || truncations.length) {
+  md += `\n## ⚠️ Run health\n\n`;
+  if (failures.length) {
+    md += `**${failures.length} case(s) had a failed API call** — excluded from cost/quality:\n\n`;
+    for (const r of failures) {
+      if (r.from.error) md += `- \`${cell(r.c.id)}\` · ${fromModel}: ${cell(r.from.error)}\n`;
+      if (r.to.error) md += `- \`${cell(r.c.id)}\` · ${toModel}: ${cell(r.to.error)}\n`;
+    }
+    md += "\n";
+  }
+  if (truncations.length) {
+    md += `**${truncations.length} case(s) hit the ${MAX_TOKENS}-token cap (\`max_tokens\`)** — output cut off, so their quality score and token/cost numbers understate reality: ${truncations.map((r) => `\`${cell(r.c.id)}\``).join(", ")}. Raise \`MAX_TOKENS\` or shorten prompts.\n`;
+  }
+  md += "\n";
+}
+
 
 if (scored.length) {
   md += `## Per-case quality delta
@@ -251,8 +265,8 @@ Per-1M-token prices from \`ferry.config.json\`. Per-request cost uses this eval 
 
 | Model | $/1M in | $/1M out | In tok (min/mean/max) | Out tok (min/mean/max) | Cost / req | Monthly @ ${traffic.toLocaleString()} |
 | --- | --- | --- | --- | --- | --- | --- |
-| ${fromModel} | ${prices[fromModel].input} | ${prices[fromModel].output} | ${spread(results.map((r) => r.from.inputTokens))} | ${spread(results.map((r) => r.from.outputTokens))} | ${microMoney(fromAvgCost)} | ${money(fromMonthly)} |
-| ${toModel} | ${prices[toModel].input} | ${prices[toModel].output} | ${spread(results.map((r) => r.to.inputTokens))} | ${spread(results.map((r) => r.to.outputTokens))} | ${microMoney(toAvgCost)} | ${money(toMonthly)} |
+| ${fromModel} | ${prices[fromModel].input} | ${prices[fromModel].output} | ${spread(fromRuns.map((r) => r.inputTokens))} | ${spread(fromRuns.map((r) => r.outputTokens))} | ${microMoney(fromAvgCost)} | ${money(fromMonthly)} |
+| ${toModel} | ${prices[toModel].input} | ${prices[toModel].output} | ${spread(toRuns.map((r) => r.inputTokens))} | ${spread(toRuns.map((r) => r.outputTokens))} | ${microMoney(toAvgCost)} | ${money(toMonthly)} |
 
 ## Judge notes
 
