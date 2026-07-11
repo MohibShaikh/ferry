@@ -89,11 +89,18 @@ export async function callModel(ref: ModelRef, prompt: string, maxTokens: number
       };
     } else {
       const c = clientFor(ref.cfg) as OpenAI;
-      const res = await c.chat.completions.create({
-        model: ref.model,
-        max_tokens: maxTokens,
-        messages: [{ role: "user", content: prompt }],
-      });
+      const messages = [{ role: "user" as const, content: prompt }];
+      let res;
+      try {
+        res = await c.chat.completions.create({ model: ref.model, max_tokens: maxTokens, messages });
+      } catch (e) {
+        // OpenAI's gpt-5 / o-series reject `max_tokens` and require
+        // `max_completion_tokens`. Other OpenAI-compatible providers only accept
+        // `max_tokens`. Try the standard param first, then fall back.
+        if (/max_tokens|max_completion_tokens|unsupported_parameter/i.test((e as Error).message)) {
+          res = await c.chat.completions.create({ model: ref.model, max_completion_tokens: maxTokens, messages });
+        } else throw e;
+      }
       const choice = res.choices[0];
       return {
         output: (choice?.message?.content ?? "").trim(),
