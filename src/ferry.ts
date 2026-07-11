@@ -25,12 +25,14 @@ const { values } = parseArgs({
     to: { type: "string" },
     evals: { type: "string" },
     traffic: { type: "string", default: "1000000" }, // requests / month
+    concurrency: { type: "string", default: "4" }, // cases evaluated in parallel
+    json: { type: "boolean", default: false }, // also write ferry-report.json
   },
 });
 const positional = process.argv[2];
 if (positional !== "compare" || !values.from || !values.to || !values.evals) {
   console.error(
-    "usage: ferry compare --from <model> --to <model> --evals <path> [--traffic <req/mo>]",
+    "usage: ferry compare --from <model> --to <model> --evals <path> [--traffic <req/mo>] [--concurrency <n>] [--json]",
   );
   process.exit(1);
 }
@@ -39,6 +41,11 @@ const toModel = values.to!;
 const traffic = Number(values.traffic);
 if (!Number.isFinite(traffic) || traffic <= 0) {
   console.error(`--traffic must be a positive number, got: ${values.traffic}`);
+  process.exit(1);
+}
+const concurrency = Number(values.concurrency);
+if (!Number.isInteger(concurrency) || concurrency <= 0) {
+  console.error(`--concurrency must be a positive integer, got: ${values.concurrency}`);
   process.exit(1);
 }
 if (!process.env.ANTHROPIC_API_KEY) {
@@ -136,9 +143,7 @@ type Result = {
   toScore?: Judged;
 };
 
-const results: Result[] = [];
-for (const c of cases) {
-  process.stderr.write(`· ${c.id}\n`);
+async function evalCase(c: EvalCase): Promise<Result> {
   const [from, to] = await Promise.all([
     runModel(fromModel, c.prompt),
     runModel(toModel, c.prompt),
@@ -152,8 +157,23 @@ for (const c of cases) {
       judge(c.prompt, c.expected, to.output),
     ]);
   }
-  results.push(r);
+  process.stderr.write(`· ${c.id}\n`);
+  return r;
 }
+
+// Run cases with a bounded worker pool so a large eval set doesn't fire every
+// request at once. Results are placed back by index to preserve report order.
+const results: Result[] = new Array(cases.length);
+let next = 0;
+await Promise.all(
+  Array.from({ length: Math.min(concurrency, cases.length) }, async () => {
+    while (true) {
+      const i = next++;
+      if (i >= cases.length) return;
+      results[i] = await evalCase(cases[i]);
+    }
+  }),
+);
 
 // ── cost math ────────────────────────────────────────────────────────────────
 const avg = (ns: number[]) => ns.reduce((a, b) => a + b, 0) / ns.length;
@@ -276,7 +296,39 @@ for (const r of scored) {
 }
 
 writeFileSync("ferry-report.md", md);
-console.error(`\nWrote ferry-report.md`);
+
+// Machine-readable twin of the report — pipe into CI to gate a migration
+// (e.g. fail if summary.quality.delta < threshold). Numbers are raw, not
+// formatted; NaN (n/a) is emitted as null so it's valid JSON.
+if (values.json) {
+  const j = (x: number) => (Number.isFinite(x) ? x : null);
+  const report = {
+    from: fromModel,
+    to: toModel,
+    evals: values.evals,
+    traffic,
+    judge: JUDGE_MODEL,
+    generated: new Date().toISOString(),
+    summary: {
+      quality: { from: j(fromAvgScore), to: j(toAvgScore), delta: j(toAvgScore - fromAvgScore), scored: validFrom.length, cases: cases.length },
+      costPerRequest: { from: j(fromAvgCost), to: j(toAvgCost), delta: j(toAvgCost - fromAvgCost) },
+      monthly: { from: j(fromMonthly), to: j(toMonthly), delta: j(toMonthly - fromMonthly) },
+    },
+    cases: results.map((r) => ({
+      id: r.c.id,
+      expected: r.c.expected ?? null,
+      from: { output: r.from.output, inputTokens: r.from.inputTokens, outputTokens: r.from.outputTokens, truncated: r.from.truncated, error: r.from.error ?? null, score: r.fromScore ? j(r.fromScore.score) : null, reason: r.fromScore?.reason ?? null },
+      to: { output: r.to.output, inputTokens: r.to.inputTokens, outputTokens: r.to.outputTokens, truncated: r.to.truncated, error: r.to.error ?? null, score: r.toScore ? j(r.toScore.score) : null, reason: r.toScore?.reason ?? null },
+    })),
+    health: {
+      failures: failures.map((r) => r.c.id),
+      truncations: truncations.map((r) => r.c.id),
+    },
+  };
+  writeFileSync("ferry-report.json", JSON.stringify(report, null, 2));
+}
+
+console.error(`\nWrote ferry-report.md${values.json ? " + ferry-report.json" : ""}`);
 console.error(
   `quality ${n(fromAvgScore)} → ${n(toAvgScore)} (${delta(toAvgScore - fromAvgScore)}) · ` +
     `monthly ${money(fromMonthly)} → ${money(toMonthly)} (${money(toMonthly - fromMonthly)})`,

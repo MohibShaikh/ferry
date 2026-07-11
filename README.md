@@ -63,9 +63,41 @@ ferry compare --from claude-sonnet-4-6 --to claude-haiku-4-5 --evals your-evals.
 
 (Or `npx @mohibzz/ferry compare …` if you didn't install globally.)
 
-Writes `ferry-report.md` in the current directory. `--traffic` is requests per
-month (default `1000000`). A ready-to-run 3-case sample ships in the repo at
-[`fixtures/sample.json`](fixtures/sample.json).
+Writes `ferry-report.md` in the current directory. A ready-to-run 3-case sample
+ships in the repo at [`fixtures/sample.json`](fixtures/sample.json).
+
+### Flags
+
+| flag | default | meaning |
+| --- | --- | --- |
+| `--from` | — | source model id (required) |
+| `--to` | — | target model id (required) |
+| `--evals` | — | path to eval JSON (required) |
+| `--traffic` | `1000000` | requests/month, for the monthly cost projection |
+| `--concurrency` | `4` | how many cases to evaluate in parallel |
+| `--json` | off | also write `ferry-report.json` (machine-readable, for CI) |
+
+### Gate a migration in CI
+
+`--json` emits `ferry-report.json` with raw numbers so you can fail a build when
+quality regresses past a threshold:
+
+```yaml
+# .github/workflows/model-check.yml
+name: model-migration check
+on: [pull_request]
+jobs:
+  ferry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npx @mohibzz/ferry compare --from claude-sonnet-4-6 --to claude-haiku-4-5 --evals evals.json --json
+        env: { ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }} }
+      - run: |
+          node -e "const q=require('./ferry-report.json').summary.quality.delta; if (q < -0.05) { console.error('quality dropped '+q); process.exit(1) }"
+```
 
 ## Eval file schema
 
