@@ -53,8 +53,13 @@ if (!process.env.ANTHROPIC_API_KEY) {
   process.exit(1);
 }
 
+// Read + parse JSON, tolerating a UTF-8 BOM (Windows editors / PowerShell
+// `Set-Content` prepend one, and JSON.parse rejects it).
+const readJson = (p: string | URL) =>
+  JSON.parse(readFileSync(p, "utf8").replace(/^﻿/, ""));
+
 // ── config (price map, editable) ────────────────────────────────────────────
-const config = JSON.parse(readFileSync(new URL("../ferry.config.json", import.meta.url), "utf8"));
+const config = readJson(new URL("../ferry.config.json", import.meta.url));
 const prices: Record<string, Price> = config.prices ?? {};
 for (const m of [fromModel, toModel]) {
   if (!prices[m]) {
@@ -64,7 +69,7 @@ for (const m of [fromModel, toModel]) {
 }
 
 // ── evals ───────────────────────────────────────────────────────────────────
-const cases: EvalCase[] = JSON.parse(readFileSync(values.evals!, "utf8"));
+const cases: EvalCase[] = readJson(values.evals!);
 if (!Array.isArray(cases) || cases.some((c) => !c.id || !c.prompt)) {
   console.error("Eval file must be a JSON array of { id, prompt, expected? }.");
   process.exit(1);

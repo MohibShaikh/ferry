@@ -1,6 +1,6 @@
 {
   "name": "@mohibzz/ferry",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Generate a model-migration report so a team can safely switch LLM providers/models.",
   "type": "module",
   "bin": {
