@@ -17,6 +17,8 @@ function Line($cmd) {
 }
 
 Clear-Host
+# start from a clean slate so a leftover report/eval from a prior run can't show
+Remove-Item ferry-report.md, ferry-report.json, evals.json -ErrorAction SilentlyContinue
 Write-Host "  ferry - cost + quality delta for switching LLM models" -ForegroundColor Green
 Write-Host "  -----------------------------------------------------" -ForegroundColor DarkGray
 Start-Sleep -Seconds 2
@@ -37,7 +39,7 @@ Start-Sleep -Seconds 2
 
 # 2. run the comparison
 Line 'ferry compare --from claude-sonnet-4-6 --to claude-haiku-4-5 --evals evals.json --traffic 500000 --json'
-npx --yes @mohibzz/ferry compare --from claude-sonnet-4-6 --to claude-haiku-4-5 --evals evals.json --traffic 500000 --json 2>&1
+npx --yes @mohibzz/ferry@latest compare --from claude-sonnet-4-6 --to claude-haiku-4-5 --evals evals.json --traffic 500000 --json 2>&1
 Start-Sleep -Seconds 2
 
 # 3. the deliverable

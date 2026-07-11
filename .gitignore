@@ -2,3 +2,5 @@ node_modules/
 ferry-report.md
 dist/
 *.tgz
+ferry-report.json
+evals.json
