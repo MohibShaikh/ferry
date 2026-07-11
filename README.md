@@ -5,6 +5,28 @@ LLM providers/models. You get a deprecation notice or want to cut cost — ferry
 runs your eval set across a *source* and a *target* model and reports the
 **quality delta** and **cost delta** as a markdown file you can hand to your team.
 
+## What ferry measures — and what it doesn't
+
+Read this before you trust a run. Ferry reports two deltas, and they do **not**
+have the same reach:
+
+- **Cost delta — valid for any workload.** It's measured token spend (real
+  input/output counts from the API `usage` object) extrapolated to your traffic.
+  Trustworthy whether you run single prompts or full agents.
+- **Quality delta — single-turn only.** Ferry scores one `prompt → response` per
+  case with an LLM-as-judge. That measures **single-turn output quality**:
+  classification, extraction, Q&A, summarization, rewriting — the tasks this tool
+  is built for.
+
+**Ferry does _not_ measure agentic, multi-step, or orchestration quality.** It
+never runs a tool loop, never spans turns, never scores a trajectory. Two models
+can post an *identical* quality delta here and still behave very differently as
+agents — planning, delegating to sub-agents, recovering from errors, persisting
+state over a long horizon. **A single-turn quality tie is not evidence of agent
+parity.** If you're migrating an agent or workflow, you need a task-completion
+eval (run the task to a graded outcome), not this tool. Ferry's *cost* delta
+still applies to that workload; its *quality* delta does not.
+
 ## Install
 
 ```bash

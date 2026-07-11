@@ -1,0 +1,45 @@
+[
+  {
+    "id": "sally-sisters",
+    "prompt": "Sally has 3 brothers. Each of her brothers has 2 sisters. How many sisters does Sally have? Answer with just a number.",
+    "expected": "1"
+  },
+  {
+    "id": "markup-then-discount",
+    "prompt": "A shirt is marked up 25% from its cost, then sold at 20% off the marked-up price. The final selling price is $30.00. What was the original cost? Answer with just the dollar amount.",
+    "expected": "$30.00"
+  },
+  {
+    "id": "combined-pipes",
+    "prompt": "Pipe A fills a tank in 6 hours. Pipe B fills the same tank in 9 hours. With both pipes open, how many hours does it take to fill the tank? Answer with just the number of hours (a decimal is fine).",
+    "expected": "3.6 hours"
+  },
+  {
+    "id": "fuel-cost",
+    "prompt": "A car consumes 7 liters of fuel per 100 km. Fuel costs $1.60 per liter. How much does fuel for a 300 km trip cost? Answer with just the dollar amount.",
+    "expected": "$33.60"
+  },
+  {
+    "id": "leap-days-inclusive",
+    "prompt": "How many days are there from February 25, 2024 through March 2, 2024, counting both the first and last day? Answer with just a number.",
+    "expected": "7"
+  },
+  {
+    "id": "coins-both-heads",
+    "prompt": "Two fair coins are flipped. Given that at least one of them landed heads, what is the probability that both landed heads? Answer as a fraction.",
+    "expected": "1/3"
+  },
+  {
+    "id": "not-prime",
+    "prompt": "Exactly one of these numbers is not prime: 51, 53, 59, 61. Which one is not prime? Answer with just the number.",
+    "expected": "51"
+  },
+  {
+    "id": "conversion-analysis",
+    "prompt": "A company's website conversion rate dropped 40% the week after a redesign, but total revenue for that week was unchanged from the prior week. Give the two most plausible explanations, one sentence each."
+  },
+  {
+    "id": "code-bug",
+    "prompt": "What is the bug in this Python function, and when does it occur? Answer in one sentence.\n\ndef average(nums):\n    return sum(nums) / len(nums)"
+  }
+]

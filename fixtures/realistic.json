@@ -1,0 +1,45 @@
+[
+  {
+    "id": "renewal-leap",
+    "prompt": "A monthly subscription was first billed on January 31, 2024. On what date does its February 2024 renewal fall? Answer with just the date.",
+    "expected": "February 29, 2024"
+  },
+  {
+    "id": "bulk-discount",
+    "prompt": "Notebooks cost $3.50 each. Orders of 10 or more get 20% off the entire order. What is the total price for 12 notebooks? Answer with just the dollar amount.",
+    "expected": "$33.60"
+  },
+  {
+    "id": "date-add-iso",
+    "prompt": "What is the date 45 days after 2024-03-01? Reply with only the date in ISO 8601 format (YYYY-MM-DD).",
+    "expected": "2024-04-15"
+  },
+  {
+    "id": "contact-extract",
+    "prompt": "Extract name, email, and phone as JSON from this text, using null for any field that is not present: 'Please reach out to Jane Doe at jane@acme.com about the Q3 proposal.' Respond with only the JSON.",
+    "expected": "{\"name\": \"Jane Doe\", \"email\": \"jane@acme.com\", \"phone\": null}"
+  },
+  {
+    "id": "ticket-classify",
+    "prompt": "Classify this support message into exactly one category: billing, technical, account, or feedback. Message: 'I was charged twice for my subscription this month and need one charge refunded.' Answer with only the category name.",
+    "expected": "billing"
+  },
+  {
+    "id": "review-sentiment",
+    "prompt": "Classify the overall sentiment as positive, negative, or mixed: 'The food was incredible, but the service was painfully slow and it was overpriced for the portion size.' Answer with one word.",
+    "expected": "mixed"
+  },
+  {
+    "id": "top-customers-sql",
+    "prompt": "Given tables customers(id, name) and orders(id, customer_id, amount), write a SQL query that returns the names of the top 3 customers by total order amount. Return only the query.",
+    "expected": "SELECT c.name FROM customers c JOIN orders o ON o.customer_id = c.id GROUP BY c.id, c.name ORDER BY SUM(o.amount) DESC LIMIT 3;"
+  },
+  {
+    "id": "incident-summary",
+    "prompt": "Summarize this in one sentence for a public status page: 'At 09:14 UTC our API began returning 503 errors due to database connection pool exhaustion. Engineers increased the pool size and failed over to a read replica. Full service was restored at 09:41 UTC.'"
+  },
+  {
+    "id": "escalation-rewrite",
+    "prompt": "Rewrite this to be one polite, professional sentence: 'send me the report now, you forgot again'."
+  }
+]
