@@ -30,19 +30,24 @@ still applies to that workload; its *quality* delta does not.
 ## Install
 
 ```bash
-npm install
+npm i -g @mohibzz/ferry
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
+
+Or skip the install and run it on demand with `npx @mohibzz/ferry …`.
 
 ## Run
 
 ```bash
-npm run ferry -- compare --from claude-sonnet-4-6 --to claude-haiku-4-5 \
-  --evals fixtures/sample.json --traffic 500000
+ferry compare --from claude-sonnet-4-6 --to claude-haiku-4-5 \
+  --evals your-evals.json --traffic 500000
 ```
 
+(Or `npx @mohibzz/ferry compare …` if you didn't install globally.)
+
 Writes `ferry-report.md` in the current directory. `--traffic` is requests per
-month (default `1000000`).
+month (default `1000000`). A ready-to-run 3-case sample ships in the repo at
+[`fixtures/sample.json`](fixtures/sample.json).
 
 ## Eval file schema
 
