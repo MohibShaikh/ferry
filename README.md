@@ -5,6 +5,8 @@ LLM providers/models. You get a deprecation notice or want to cut cost — ferry
 runs your eval set across a *source* and a *target* model and reports the
 **quality delta** and **cost delta** as a markdown file you can hand to your team.
 
+![ferry demo — comparing two models and writing the report](https://raw.githubusercontent.com/MohibShaikh/ferry/master/assets/demo.gif)
+
 ## What ferry measures — and what it doesn't
 
 Read this before you trust a run. Ferry reports two deltas, and they do **not**
