@@ -59,30 +59,62 @@ the environment variable above differs by shell.
 
 ## Run
 
+Compare any number of models — the first is the **baseline** everything else is
+measured against:
+
 ```bash
-ferry compare --from claude-sonnet-4-6 --to claude-haiku-4-5 --evals your-evals.json --traffic 500000
+ferry compare --models claude-opus-4-8,claude-sonnet-5,claude-haiku-4-5 --evals your-evals.json --traffic 500000
 ```
 
-(Or `npx @mohibzz/ferry compare …` if you didn't install globally.)
+The classic two-model form still works: `ferry compare --from A --to B --evals …`.
+Writes `ferry-report.md` (a cost/quality/**latency** leaderboard) in the current
+directory. A 3-case sample ships in the repo at [`fixtures/sample.json`](fixtures/sample.json).
 
-Writes `ferry-report.md` in the current directory. A ready-to-run 3-case sample
-ships in the repo at [`fixtures/sample.json`](fixtures/sample.json).
+### Providers — Claude, OpenAI, and open-source frontier models
+
+Reference a model as `provider:model`. A bare id (no provider) means Anthropic,
+so `claude-sonnet-5` == `anthropic:claude-sonnet-5`. Each provider reads its own
+API key from an env var (see [`ferry.config.json`](ferry.config.json) → `providers`):
+
+```bash
+ferry compare --models anthropic:claude-opus-4-8,openai:gpt-5.5,deepseek:deepseek-chat,zhipu:glm-4.6 --evals evals.json
+# needs ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, ZHIPU_API_KEY
+```
+
+Under the hood there are just two adapters: **Anthropic-native**, and
+**OpenAI-compatible** (any `baseURL`). That second one covers OpenAI, DeepSeek,
+Zhipu/GLM, Moonshot/Kimi, Qwen/DashScope, OpenRouter, Together, Groq, Fireworks,
+and local **Ollama/vLLM** — add or edit providers in the config to point at any
+endpoint that speaks the OpenAI Chat Completions format.
+
+> ⚠️ Only the `anthropic:*` prices in the config are authoritative. **Every
+> non-Anthropic price is a best-effort placeholder and will be stale — verify it
+> against the provider before trusting a cost number.**
 
 ### Flags
 
 | flag | default | meaning |
 | --- | --- | --- |
-| `--from` | — | source model id (required) |
-| `--to` | — | target model id (required) |
-| `--evals` | — | path to eval JSON (required) |
+| `--models` | — | comma-separated model ids, 2+ (first = baseline). Supersedes `--from`/`--to` |
+| `--from` / `--to` | — | two-model sugar for `--models A,B` |
+| `--evals` | — | path to an eval JSON **file, or a directory** of them (a suite) |
 | `--traffic` | `1000000` | requests/month, for the monthly cost projection |
-| `--concurrency` | `4` | how many cases to evaluate in parallel |
+| `--concurrency` | `4` | cases evaluated in parallel |
+| `--judge` | `anthropic:claude-opus-4-8` | LLM-as-judge model (any provider) |
 | `--json` | off | also write `ferry-report.json` (machine-readable, for CI) |
+| `--baseline <file>` | — | fail if a model regresses vs a prior `ferry-report.json` |
+| `--max-quality-drop` | `0.05` | allowed quality drop vs baseline before failing |
+| `--max-cost-increase` | `0.25` | allowed monthly-cost increase (fraction) vs baseline |
+
+### Eval suites (a directory, not one file)
+
+Point `--evals` at a directory and ferry runs every `*.json` in it as one suite,
+namespacing case ids by file (`billing/refund`, `chat/greet`). Teams don't have
+one eval file — they have "billing prompts," "extraction prompts," "chat prompts."
 
 ### Gate a migration in CI
 
-`--json` emits `ferry-report.json` with raw numbers so you can fail a build when
-quality regresses past a threshold:
+`--json` emits raw numbers, and `--baseline` fails the build on regression:
 
 ```yaml
 # .github/workflows/model-check.yml
@@ -95,11 +127,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - run: npx @mohibzz/ferry compare --from claude-sonnet-4-6 --to claude-haiku-4-5 --evals evals.json --json
+      # save ferry-report.json once as ferry-baseline.json; commit it. Then:
+      - run: npx @mohibzz/ferry compare --models claude-opus-4-8,claude-haiku-4-5 --evals evals/ --json --baseline ferry-baseline.json --max-quality-drop 0.05
         env: { ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }} }
-      - run: |
-          node -e "const q=require('./ferry-report.json').summary.quality.delta; if (q < -0.05) { console.error('quality dropped '+q); process.exit(1) }"
 ```
+
+A non-zero exit (quality dropped or cost rose past the thresholds) fails the job.
 
 ## Eval file schema
 
@@ -107,7 +140,8 @@ A JSON array of cases. Dead simple:
 
 ```json
 [
-  { "id": "capital", "prompt": "What is the capital of Australia?", "expected": "Canberra" },
+  { "id": "capital", "prompt": "Capital of Australia? One word.", "expected": "Canberra", "match": "contains" },
+  { "id": "route",   "prompt": "Classify as billing/tech: ...",   "expected": "^billing$", "match": "regex" },
   { "id": "rewrite", "prompt": "Rewrite this politely: ..." }
 ]
 ```
@@ -115,16 +149,18 @@ A JSON array of cases. Dead simple:
 | field      | required | meaning                                                        |
 | ---------- | -------- | -------------------------------------------------------------- |
 | `id`       | yes      | short label, used in the report                                |
-| `prompt`   | yes      | the user message sent to both models                           |
-| `expected` | no       | reference answer. If present, ferry scores each model against it via LLM-as-judge. If absent, ferry just captures both outputs for an eyeball diff. |
+| `prompt`   | yes      | the user message sent to every model                           |
+| `expected` | no       | reference answer. If present, ferry scores each model against it. If absent, outputs are dumped for an eyeball diff. |
+| `match`    | no       | how to score against `expected` (default `judge`): `judge` (LLM-as-judge, semantic), `exact`, `contains`, or `regex`. The non-`judge` matchers are **deterministic and free** — no API call — so use them for classification, extraction, and anything with a checkable answer. |
 
 A 3-case sample lives in [`fixtures/sample.json`](fixtures/sample.json) so it runs immediately.
 
 ## How it works
 
-For each case, ferry calls the Anthropic Messages API **twice** — once for the
-`--from` model, once for the `--to` model — capturing the output text and the
-input/output token counts from `usage`.
+For each case, ferry calls **every model** once (in parallel, across providers),
+capturing the output text plus the input/output token counts and wall-clock
+latency. Anthropic goes through the native SDK; everything else through an
+OpenAI-compatible adapter.
 
 ### Judging (quality)
 
@@ -193,12 +229,13 @@ isolates failures per case:
 ## Tests
 
 ```bash
-npm test        # asserts on the money + judge-parse paths (src/lib.test.ts)
+npm test        # asserts money, judge-parse, scoring, percentile, redaction paths
 npm run typecheck
 ```
 
-The pure, report-corrupting logic (`parseJudge`, `reqCost`) lives in `src/lib.ts`
-so it's covered without hitting the API.
+The pure, report-corrupting logic (`parseJudge`, `reqCost`, `scoreMatch`,
+`percentile`, `redactSecrets`) lives in `src/lib.ts` so it's covered without
+hitting any API. Providers live in `src/providers.ts`, orchestration in `src/ferry.ts`.
 
 ## Security
 
@@ -218,22 +255,36 @@ was reviewed and hardened against that trust boundary.
   run in the output, so model text containing ` ``` ` can't escape its code block.
 - **Defensive judge parsing** — fences stripped, first `{...}` extracted, score
   clamped, failures degrade to a recorded `NaN` instead of crashing.
+- **Secret redaction (v0.3)** — API errors flow into the report/JSON, so any key
+  or `Authorization: Bearer` token in an SDK error string is scrubbed (known key
+  literal + `sk-…`/bearer shapes) before it can be written anywhere.
+- **ReDoS bound (v0.3)** — `match: regex` runs a user regex against model output;
+  the matched string is length-capped (100 KB) so a crafted output can't hang the
+  run.
 
-**Accepted risks (v0):**
+**Accepted risks / trust boundaries:**
 
-- **`ANTHROPIC_API_KEY`** is read only from the environment and never written to
-  the report or logs. Don't pass it on the command line (it lands in shell
-  history / process list) — export it. If a key is ever exposed, rotate it.
-- **`--evals` reads an arbitrary path** by design: ferry runs as you, on your own
-  files. No sandboxing is attempted.
-- **Wallet DoS** — a large eval file = proportional API spend. There is no cap or
-  concurrency limit; keep eval sets sized to your budget.
-- **Rendering the report** — treat `ferry-report.md` as containing untrusted
-  content. Escaping covers tables/lists/fences; render it as plain markdown (no
-  raw-HTML pass-through) if you publish it to a dashboard.
+- **Keys are sent to each provider's `baseURL`.** A provider's API key is
+  transmitted only to the `baseURL` in its config entry — but a **tampered config**
+  (supply-chain, or a careless "add this proxy") could redirect a key to a hostile
+  host. Only add providers/base URLs you trust; the config is as sensitive as the
+  keys it routes.
+- **API keys** are read only from env vars, never written to the report or logs.
+  Don't pass them on the command line (they land in shell history / process list).
+  If a key is ever exposed, rotate it.
+- **`--evals` reads an arbitrary path/dir** by design: ferry runs as you, on your
+  own files. No sandboxing.
+- **Wallet DoS scales with `cases × models`.** N models multiplies spend; there's a
+  `--concurrency` throttle but no hard cost cap. Size eval sets and model lists to
+  your budget.
+- **Rendering the report** — treat `ferry-report.md` as untrusted content.
+  Escaping covers tables/lists/fences; render it as plain markdown (no raw-HTML
+  pass-through) if you publish it to a dashboard.
 
 ## Scope
 
-v0. Anthropic models only, single-turn prompts, average-based monthly cost
-projection. No retries/concurrency limits, no caching, no non-Anthropic
-providers.
+v0.3. **Quality axis is single-turn only** (see the top of this README) —
+multi-step/agentic quality is out of scope by construction. Cost is an
+average-based monthly projection with no prompt-caching model. Providers: Anthropic
+native + any OpenAI-compatible endpoint. Non-Anthropic prices are placeholders to
+verify.

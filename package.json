@@ -1,6 +1,6 @@
 {
   "name": "@mohibzz/ferry",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Generate a model-migration report so a team can safely switch LLM providers/models.",
   "type": "module",
   "bin": {
@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",
-    "@mohibzz/ferry": "^0.1.4"
+    "openai": "^4.104.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
