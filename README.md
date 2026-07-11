@@ -31,10 +31,21 @@ still applies to that workload; its *quality* delta does not.
 
 ```bash
 npm i -g @mohibzz/ferry
+```
+
+Then set your API key. **macOS / Linux (bash/zsh):**
+
+```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-Or skip the install and run it on demand with `npx @mohibzz/ferry …`.
+**Windows (PowerShell):**
+
+```powershell
+$env:ANTHROPIC_API_KEY = "sk-ant-..."
+```
+
+Or skip the global install and run on demand with `npx @mohibzz/ferry …`.
 
 ## Run
 
