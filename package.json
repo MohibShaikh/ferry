@@ -23,7 +23,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.68.0"
+    "@anthropic-ai/sdk": "^0.68.0",
+    "@mohibzz/ferry": "^0.1.4"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
