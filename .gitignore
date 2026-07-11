@@ -1,2 +1,4 @@
 node_modules/
 ferry-report.md
+dist/
+*.tgz

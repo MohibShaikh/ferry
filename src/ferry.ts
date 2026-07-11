@@ -1,4 +1,4 @@
-#!/usr/bin/env -S npx tsx
+#!/usr/bin/env node
 /**
  * ferry compare --from <model> --to <model> --evals <path> [--traffic <req/mo>]
  *
