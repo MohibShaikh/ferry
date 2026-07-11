@@ -45,13 +45,20 @@ export ANTHROPIC_API_KEY=sk-ant-...
 $env:ANTHROPIC_API_KEY = "sk-ant-..."
 ```
 
-Or skip the global install and run on demand with `npx @mohibzz/ferry …`.
+**Windows (cmd.exe):**
+
+```bat
+set ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Or skip the global install and run on demand with `npx @mohibzz/ferry …`. The
+`ferry compare …` command itself is identical on every OS — only the way you set
+the environment variable above differs by shell.
 
 ## Run
 
 ```bash
-ferry compare --from claude-sonnet-4-6 --to claude-haiku-4-5 \
-  --evals your-evals.json --traffic 500000
+ferry compare --from claude-sonnet-4-6 --to claude-haiku-4-5 --evals your-evals.json --traffic 500000
 ```
 
 (Or `npx @mohibzz/ferry compare …` if you didn't install globally.)
